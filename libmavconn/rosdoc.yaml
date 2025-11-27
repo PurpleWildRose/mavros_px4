@@ -1,0 +1,2 @@
+- builder: doxygen     # 使用 Doxygen 解析 C++ 代码
+  exclude_patterns: '*/.git/* */test/*'   # 排除测试目录
