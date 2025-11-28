@@ -1,0 +1,4 @@
+[submodule "mavconn/include/mavlink"]
+	path = mavconn/include/mavlink
+	url = https://github.com/PurpleWildRose/mavlink_library.git
+	dev = cxx
