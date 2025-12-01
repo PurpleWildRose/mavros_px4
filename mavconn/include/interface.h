@@ -2,7 +2,11 @@
 
 #include <boost/system/system_error.hpp>
 
+#include <atomic>
+#include <cassert>
 #include <chrono>
+#include <deque>
+#include <vector>
 #include <thread>
 #include <mutex>
 #include <vector>
@@ -96,10 +100,12 @@ namespace mavconn{
     class MAVConnInterface {
         public:
             MAVConnInterface(uint8_t system_id = 1, uint8_t component_id = MAV_COMP_ID_UDP_BRIDGE);
+
         private:
             // 删除了 MAVConnInterface 类的拷贝构造函数。这意味着你不能拷贝该类的对象。删除拷贝构造函数的一个常见原因是防止不小心拷贝一个管理资源的对象，尤其是当类包含资源管理（如内存、文件句柄、网络连接等）时，这样可以避免潜在的资源泄漏或重复销毁资源。
 	        MAVConnInterface(const MAVConnInterface&) = delete;
 
+        public:
             // std::function 是一个通用的函数包装器，允许你使用各种可调用对象（如普通函数、Lambda 表达式、成员函数等）。
             // ReceivedCb 是一个回调函数类型的别名，表示一个接受两个参数的函数
             using ReceivedCb = std::function<void (const mavlink::mavlink_message_t *message, const Framing framing)>;
@@ -307,11 +313,62 @@ namespace mavconn{
             //! Channel number used for logging.
             size_t conn_id;
 
-            // inline mavlink::mavlink_status_t *get_status_p() {
-            //     return &m_parse_status;
-            // }
+            // 获取当前mavlink解析状态指针
+            inline mavlink::mavlink_status_t *get_status_p() {
+                return &m_parse_status;
+            }
+            // 获取当前mavlink解析buffer指针
+            inline mavlink::mavlink_message_t *get_buffer_p() {
+                return &m_buffer;
+            }
+            /**
+             * Parse buffer and emit massage_received.
+             * 		通用的 MAVLink 字节流解析函数(子类接收原始字节后调用)
+             * 			1. 将原始字节（如串口读取的字节、UDP 接收的数据包）填入解析缓冲区
+             * 			2. 调用 MAVLink 原生解析函数（mavlink_parse_char）解析帧；
+             * 			3. 解析完成后，通过 ReceivedCb 回调上层（传入消息指针和帧状态 Framing）。
+             * @param pfx,       // 日志前缀，用于标识日志的来源
+             * @param buf,          // 输入的字节缓冲区，包含接收到的数据
+             * @param ufsize,  // 缓冲区的大小
+             * @param bytes_received  // 接收到的字节数
+             */
+            void parse_buffer(const char *pfx, uint8_t *buf, const size_t bufsize, size_t bytes_received);
+
+            void iostat_tx_add(size_t bytes);
+            void iostat_rx_add(size_t bytes);
+
+            void log_recv(const char *pfx, mavlink::mavlink_message_t &msg, Framing frame);
+            void log_send(const char *pfx, mavlink::mavlink_message_t *msg);
+            void log_send_obj(const char *pfx, const mavlink::Message &msg);
 
         private:
-            // friend const mavlink::mavlink_msg_entry_t();
+            friend const mavlink::mavlink_msg_entry_t *mavlink::mavlink_get_msg_entry(uint8_t megid);
+
+            // MAVLink 协议中用于存储解析状态信息的数据结构，主要用于跟踪 MAVLink 消息的解析过程、帧同步状态和错误统计等
+            mavlink::mavlink_status_t m_parse_status;
+            // MAVLink 协议中用于表示完整消息的数据结构，定义了 MAVLink 消息的所有核心字段，是消息传输和解析的核心载体
+            mavlink::mavlink_message_t m_buffer;
+            mavlink::mavlink_status_t m_mavlink_status;
+
+            // 确保无锁的线程安全访问，避免竞态条件
+            std::atomic<size_t> tx_total_bytes, rx_total_bytes;
+
+            // 使用 std::recursive_mutex（递归互斥锁）保护 IO 统计数据（iostat_mutex），
+	        // 允许同一线程多次加锁（如在回调中调用统计接口）。
+            std::recursive_mutex iostat_mutex;
+            size_t last_tx_total_bytes, last_rx_total_bytes;
+
+            // std::chrono::system_clock：系统时钟（可修改，对应现实时间）；
+            // std::chrono::steady_clock：稳定时钟（不可修改，适合测量时间间隔）；
+            // std::chrono::high_resolution_clock：高精度时钟（通常是 steady_clock 或 system_clock 的别名）。
+            std::chrono::time_point<stead_clock> last_iostat;
+
+            // 为每个连接实例分配唯一的 conn_id（从 0 开始递增），用于日志区分不同连接。
+            static std::atomic<size_t> conn_id_counter;
+
+            // std::call_once 实现多线程环境下某个函数仅执行一次的语义，确保即使多个线程同时调用，目标函数也只会被执行一次，常用于单例初始化、全局资源加载等场景
+            static std::once_flag init_flag;
+
+            static void init_msg_entry();
     };
 }
