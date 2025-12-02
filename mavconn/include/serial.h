@@ -52,7 +52,7 @@ class MAVConnSerial: public MAVConnInterface, public std::enable_shared_from_thi
 
         void do_read();
 
-        void do_write();
+        void do_write(bool check_tx_state);
 
 };
 
