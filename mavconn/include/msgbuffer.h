@@ -58,7 +58,6 @@ class MsgBuffer{
 
         // MAVLINK_MAX_PACKET_LEN 代表着Mavlink最大的负载消息（v2: 12~280     v1: 8~263）
         static constexpr ssize_t MAX_SIZE = MAVLINK_MAX_PACKET_LEN + 16;
-    private:
         uint8_t data[MAX_SIZE];
         // 有效数据长度（受payload的影响 payload max = 255）
         ssize_t len;

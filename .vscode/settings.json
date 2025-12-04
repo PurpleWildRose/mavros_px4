@@ -52,6 +52,8 @@
         "cinttypes": "cpp",
         "typeinfo": "cpp",
         "fstream": "cpp",
-        "map": "cpp"
+        "map": "cpp",
+        "cassert": "cpp",
+        "thread": "cpp"
     }
 }
