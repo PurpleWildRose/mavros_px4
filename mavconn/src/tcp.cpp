@@ -97,23 +97,55 @@ namespace mavconn{
     /**
      * client_connected
      * @brief boost将do_recv添加到
+     *
+     * @param channel 服务端的通道
      */
     void MAVConnTCPClient::client_connected(size_t channel) {
         CONSOLE_BRIDGE_logInform(PFXd "Got client, id %zu, address %s", channel, conn_id, utils::to_string_ss(server_ep).c_str());
 
-        GET_IO_SERVICE(socket).post(std::bind(&MAVConnTCPClient::do_recv, this));
+        GET_IO_SERVICE(socket).post(std::bind(&MAVConnTCPClient::do_recv, shared_from_this()));
+    }
+
+    MAVConnTCPClient::~MAVConnTCPClient() {
+        is_destroying = true;
+        close();
     }
 
     /**
+     * connect
+     * @brief 实现的 TCP 客户端连接核心逻辑，主要作用是初始化回调函数、启动异步接收、创建独立 IO 线程驱动事件循环
      *
+     * @param cb_handle_message     回调消息处理
+     * @param cb_handle_closed_port 回调端口关闭处理
      */
     void MAVConnTCPClient::connect(const ReceivedCb &cb_handle_message,
                         const ClosedCb &cb_handle_closed_port = ClosedCb()) {
         message_received_cb = cb_handle_message;
         port_close_cb = cb_handle_closed_port;
 
-        GET_IO_SERVICE(socket).post(std::bind(&MAVConnTCPClient::do_recv(), this));
+        io_service.post(std::bind(&MAVConnTCPClient::do_recv, this));
+
+        io_thread = std::thread([this](){
+            utils::set_this_thread_name("mtcp%zu", conn_id);
+            io_service.run();
+        });
     }
 
+    /**
+     *
+     */
+    void MAVConnTCPClient::close() {
+        lock_guard lock(mutex);
+
+        if (!is_open())
+            return;
+
+        boost::system::error_code ec;
+        socket.shutdown(boost::asio::ip::tcp::socket::shutdown_send, ec);
+        if (ec)
+            CONSOLE_BRIDGE_logError(PFXd "shutdown: %s", conn_id, ec.message().c_str());
+
+
+    }
 
 } //name mavconn
